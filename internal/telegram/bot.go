@@ -42,6 +42,7 @@ func New(cfg *config.Config, edgeClient *edge.Client) (*Bot, error) {
 				JumpHost: cfg.Edge.Host,
 				TargetIP: upstream.IP,
 				User:     upstream.User,
+				KeyPath:  cfg.Edge.KeyPath,
 				APIPort:  upstream.SwitchGatePort,
 			})
 			if err != nil {
