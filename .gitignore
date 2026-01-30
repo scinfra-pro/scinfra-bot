@@ -1,0 +1,62 @@
+# Binaries
+scinfra-bot
+scinfra-bot.exe
+*.exe
+*.dll
+*.so
+*.dylib
+dist/
+
+# ===========================================
+# SECRETS - NEVER COMMIT
+# ===========================================
+
+# Config with secrets (use config.example.yaml as template)
+config.yaml
+configs/config.yaml
+**/config.yaml
+!configs/config.example.yaml
+
+# Vault files
+vault.yml
+**/vault.yml
+*.secret
+*.secret.yaml
+*.secret.yml
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# SSH keys
+*.pem
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.key
+
+# ===========================================
+# IDE
+# ===========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===========================================
+# OS
+# ===========================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===========================================
+# Go
+# ===========================================
+vendor/
+*.test
+*.out
+coverage.html

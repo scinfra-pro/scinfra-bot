@@ -1,0 +1,50 @@
+# SCINFRA Bot Configuration
+# Copy to config.yaml and fill in your values
+
+telegram:
+  # Bot token from @BotFather
+  token: "${TELEGRAM_BOT_TOKEN}"
+  # Allowed chat IDs (only these chats can use the bot)
+  allowed_chat_ids:
+    - 123456789
+
+# Edge-gateway connection
+edge:
+  # Display name for traffic statistics
+  name: "Cloud Provider"
+  # SSH host (user@host)
+  host: "${EDGE_HOST}"
+  # Path to SSH private key (optional, uses SSH agent if not set)
+  # key_path: "/opt/scinfra-bot/.ssh/id_ed25519"
+  # VPN mode script path on edge-gateway
+  vpn_mode_script: "/usr/local/bin/vpn-mode.sh"
+
+# Available upstream servers
+# Define your VPS servers here. Keys are used as command names.
+# Example: with key "primary", command will be /upstream_primary
+upstreams:
+  primary:
+    name: "Primary VPS"           # Display name (optional)
+    ip: "${PRIMARY_VPS_IP}"
+    user: "root"
+    switch_gate: true
+    switch_gate_port: 9090
+  secondary:
+    name: "Secondary VPS"
+    ip: "${SECONDARY_VPS_IP}"
+    user: "root"
+    switch_gate: true
+    switch_gate_port: 9090
+
+# Webhook receiver (for switch-gate notifications)
+webhooks:
+  # Enable webhook receiver
+  enabled: true
+  # Listen address for incoming webhooks
+  listen: "0.0.0.0:8080"
+  # Shared secret for authentication (must match switch-gate config)
+  secret: "${WEBHOOK_SECRET}"
+
+# Logging
+logging:
+  level: "info"  # debug, info, warn, error
