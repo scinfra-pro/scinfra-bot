@@ -14,6 +14,7 @@ type Config struct {
 	Webhooks       WebhooksConfig       `yaml:"webhooks"`
 	Logging        LoggingConfig        `yaml:"logging"`
 	Infrastructure InfrastructureConfig `yaml:"infrastructure"`
+	S3             S3Config             `yaml:"s3"`
 }
 
 // InfrastructureConfig configures infrastructure monitoring
@@ -101,6 +102,49 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// MergeS3Metadata merges S3 metadata into config
+// S3 data takes precedence over YAML for edge, upstreams, and infrastructure
+func (c *Config) MergeS3Metadata(metadata *S3Metadata) {
+	if metadata == nil {
+		return
+	}
+
+	// Merge edge config (S3 takes precedence, but keep KeyPath from YAML)
+	if metadata.Edge != nil {
+		keyPath := c.Edge.KeyPath // preserve from YAML
+		c.Edge = *metadata.Edge
+		c.Edge.KeyPath = keyPath
+	}
+
+	// Merge upstreams (S3 adds to YAML, overwrites by key)
+	if len(metadata.Upstreams) > 0 {
+		if c.Upstreams == nil {
+			c.Upstreams = make(map[string]*Upstream)
+		}
+		for k, v := range metadata.Upstreams {
+			c.Upstreams[k] = v
+		}
+	}
+
+	// Merge infrastructure clouds (S3 adds to YAML)
+	if len(metadata.Clouds) > 0 {
+		c.Infrastructure.Clouds = append(c.Infrastructure.Clouds, metadata.Clouds...)
+		c.Infrastructure.Enabled = true
+	}
+}
+
+// ValidateRuntime checks required fields after S3 merge
+// Call this after MergeS3Metadata to ensure we have valid config
+func (c *Config) ValidateRuntime() error {
+	if c.Edge.Host == "" {
+		return fmt.Errorf("edge.host is required (configure in YAML or enable S3)")
+	}
+	if len(c.Upstreams) == 0 {
+		return fmt.Errorf("at least one upstream is required (configure in YAML or enable S3)")
+	}
+	return nil
+}
+
 // Validate checks required fields
 func (c *Config) Validate() error {
 	if c.Telegram.Token == "" {
@@ -109,9 +153,7 @@ func (c *Config) Validate() error {
 	if len(c.Telegram.AllowedChatIDs) == 0 {
 		return fmt.Errorf("telegram.allowed_chat_ids is required")
 	}
-	if c.Edge.Host == "" {
-		return fmt.Errorf("edge.host is required")
-	}
+	// Edge and upstreams are validated after S3 merge (in ValidateAfterMerge)
 	if c.Edge.Name == "" {
 		c.Edge.Name = "Edge Gateway"
 	}
@@ -125,9 +167,23 @@ func (c *Config) Validate() error {
 	if c.Webhooks.Listen == "" {
 		c.Webhooks.Listen = "0.0.0.0:8080"
 	}
-	// Require at least one upstream
-	if len(c.Upstreams) == 0 {
-		return fmt.Errorf("at least one upstream is required in config")
+	// S3 validation
+	if c.S3.Enabled {
+		if c.S3.Bucket == "" {
+			return fmt.Errorf("s3.bucket is required when s3.enabled is true")
+		}
+		if c.S3.Endpoint == "" {
+			return fmt.Errorf("s3.endpoint is required when s3.enabled is true")
+		}
+		if c.S3.Region == "" {
+			return fmt.Errorf("s3.region is required when s3.enabled is true")
+		}
+		if len(c.S3.Providers) == 0 {
+			return fmt.Errorf("s3.providers is required when s3.enabled is true")
+		}
+		if c.S3.Prefix == "" {
+			c.S3.Prefix = "metadata/"
+		}
 	}
 	// Set defaults for upstreams
 	for key, u := range c.Upstreams {
