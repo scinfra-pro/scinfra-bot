@@ -61,6 +61,90 @@ Control switch-gate mode on the current upstream VPS.
 | warp | ☁️ | Cloudflare WARP tunnel |
 | home | 🏠 | Residential proxy IP |
 
+## Infrastructure Commands
+
+Monitor all servers and services in your infrastructure.
+
+| Command | Description |
+|---------|-------------|
+| `/infra` | Infrastructure overview with server buttons |
+| `/health` | Health status with metrics and external checks |
+
+### Infrastructure View
+
+The `/infra` command shows an overview of all configured servers:
+
+```
+🏗️ Infrastructure
+
+☁️ Production
+  • 🖥️ gateway (10.0.1.10)
+  • 🌐 web-server (10.0.2.10)
+  • 🗄️ db-server (10.0.3.10)
+
+☁️ Remote 1
+  • 📍 vps-primary (1.2.3.4)
+
+☁️ Remote 2
+  • 📍 vps-secondary (5.6.7.8)
+
+[🔄 Refresh] [📊 Health]
+```
+
+### Health View
+
+The `/health` command (or Health button) shows server status with indicators:
+
+```
+📊 Infrastructure Health
+
+☁️ Production
+  🟢 gateway 📶
+  🟡 web-server ❌
+  🟢 db-server 📶
+
+☁️ Remote 1
+  🟢 vps-primary 📶
+
+☁️ Remote 2
+  🟢 vps-secondary 📶
+
+🔗 Grafana: http://localhost:3000 (VPN)
+```
+
+### Status Icons
+
+| Icon | Meaning |
+|------|---------|
+| 🟢 | Server is up and healthy |
+| 🟡 | Server is up but degraded (high CPU/RAM/Disk or service down) |
+| 🛑 | Server is down |
+| 📶 | Externally accessible (HTTPS/TCP check passed) |
+| ❌ | Not externally accessible |
+
+### Server Detail View
+
+Click on any server button to see detailed information:
+
+```
+🖥️ gateway (10.0.1.10)
+Status: 🟢 up
+External: 📶 accessible (45ms)
+
+📦 Services:
+  • Nginx ✅ (:443)
+  • WireGuard ✅ (:51820)
+
+💻 Resources:
+  • CPU: 15% ▓░░░░░░░░░
+  • RAM: 45% ▓▓▓▓░░░░░░ (0.9/2.0 GB)
+  • Disk: 35% ▓▓▓░░░░░░░ (3/10 GB)
+
+⏱️ Uptime: 14d 3h 22m
+
+[← Back] [🔄 Refresh]
+```
+
 ## Admin Commands
 
 | Command | Description |

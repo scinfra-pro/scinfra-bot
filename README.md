@@ -8,6 +8,7 @@ Telegram bot for distributed infrastructure management. Control network modes, s
 - **Multi-upstream support** — Manage multiple servers
 - **Server mode control** — Direct IP, WARP, or residential proxy
 - **Traffic monitoring** — Track usage and costs
+- **Infrastructure monitoring** — Health checks for all servers via Prometheus
 - **Inline keyboard** — Quick access to all controls
 - **Webhook notifications** — Real-time alerts
 
@@ -19,6 +20,28 @@ Telegram bot for distributed infrastructure management. Control network modes, s
 [🖥️ Direct] [☁️ WARP ✓] [🏠 Home]
 [🔄 Refresh] [📊 Traffic]
 ```
+
+### Infrastructure Health UI
+
+```
+📊 Infrastructure Health
+
+☁️ Production
+  🟢 gateway 📶
+  🟢 web-server 📶
+  🟢 db-server 📶
+
+☁️ Remote 1
+  🟢 vps-primary 📶
+
+☁️ Remote 2
+  🟢 vps-secondary 📶
+
+[← Back] [🔄 Refresh]
+```
+
+- 🟢/🟡/🛑 — server health (up/degraded/down)
+- 📶/❌ — external accessibility
 
 ## Quick Start
 
@@ -40,6 +63,7 @@ scinfra-bot -config /etc/scinfra-bot/config.yaml
 
 - [Commands](docs/commands.md) — Bot commands and UI
 - [Configuration](docs/configuration.md) — Config file reference
+- [Infrastructure](docs/infrastructure.md) — Infrastructure monitoring
 - [Traffic Monitoring](docs/traffic.md) — Traffic statistics
 - [Webhooks](docs/webhooks.md) — Webhook integration
 
@@ -56,6 +80,7 @@ make build
 - Go 1.21+
 - SSH access to edge-gateway
 - [switch-gate](https://github.com/scinfra-pro/switch-gate) v0.5+ on VPS (optional, for VPS mode control)
+- Prometheus + node_exporter (optional, for infrastructure monitoring)
 
 ## License
 

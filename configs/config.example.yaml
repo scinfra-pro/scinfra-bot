@@ -48,3 +48,75 @@ webhooks:
 # Logging
 logging:
   level: "info"  # debug, info, warn, error
+
+# Infrastructure monitoring (optional)
+# Enables /infra and /health commands for monitoring all servers
+infrastructure:
+  # Enable infrastructure monitoring
+  enabled: true
+  # Prometheus URL (bot queries Prometheus directly via localhost)
+  prometheus_url: "http://localhost:9090"
+  
+  # Cloud providers and their servers
+  clouds:
+    - name: "Production"
+      icon: "☁️"
+      servers:
+        - id: gateway
+          name: "gateway"
+          icon: "🖥️"
+          ip: "10.0.1.10"
+          # External check: HTTPS probe to verify accessibility from outside
+          external_check: "https://gateway.example.com"
+          services:
+            - name: "Nginx"
+              job: "nginx"       # Prometheus job name
+            - name: "WireGuard"
+              port: 51820
+              
+        - id: web-server
+          name: "web-server"
+          icon: "🌐"
+          ip: "10.0.2.10"
+          external_check: "https://web.example.com"
+          services:
+            - name: "web-app"
+              port: 80
+              
+        - id: db-server
+          name: "db-server"
+          icon: "🗄️"
+          ip: "10.0.3.10"
+          external_check: "https://db.example.com"
+          services:
+            - name: "PostgreSQL"
+              port: 5432
+              
+    - name: "Remote 1"
+      icon: "☁️"
+      servers:
+        - id: vps-primary
+          name: "vps-primary"
+          icon: "📍"
+          ip: "${PRIMARY_VPS_IP}"
+          # TCP check for gost port
+          external_check: "tcp://${PRIMARY_VPS_IP}:443"
+          services:
+            - name: "gost"
+              port: 443
+            - name: "switch-gate"
+              port: 9090
+              
+    - name: "Remote 2"
+      icon: "☁️"
+      servers:
+        - id: vps-secondary
+          name: "vps-secondary"
+          icon: "📍"
+          ip: "${SECONDARY_VPS_IP}"
+          external_check: "tcp://${SECONDARY_VPS_IP}:443"
+          services:
+            - name: "gost"
+              port: 443
+            - name: "switch-gate"
+              port: 9090

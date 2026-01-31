@@ -9,6 +9,7 @@ import (
 
 	"github.com/scinfra-pro/scinfra-bot/internal/config"
 	"github.com/scinfra-pro/scinfra-bot/internal/edge"
+	"github.com/scinfra-pro/scinfra-bot/internal/health"
 	"github.com/scinfra-pro/scinfra-bot/internal/switchgate"
 )
 
@@ -18,6 +19,7 @@ type Bot struct {
 	config            *config.Config
 	edgeClient        *edge.Client
 	switchGateClients map[string]*switchgate.Client
+	healthChecker     *health.Checker
 
 	// Cooldown tracking for callback spam protection
 	callbackCooldown map[int64]time.Time
@@ -54,11 +56,19 @@ func New(cfg *config.Config, edgeClient *edge.Client) (*Bot, error) {
 		}
 	}
 
+	// Create health checker if infrastructure monitoring is enabled
+	var healthChecker *health.Checker
+	if cfg.IsInfrastructureEnabled() {
+		healthChecker = health.NewChecker(cfg, sgClients)
+		log.Printf("Infrastructure monitoring enabled with %d clouds", len(cfg.Infrastructure.Clouds))
+	}
+
 	return &Bot{
 		api:               api,
 		config:            cfg,
 		edgeClient:        edgeClient,
 		switchGateClients: sgClients,
+		healthChecker:     healthChecker,
 		callbackCooldown:  make(map[int64]time.Time),
 	}, nil
 }

@@ -72,6 +72,10 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.handleTraffic(msg)
 	case "restart", "restart_sg":
 		b.handleRestart(msg, args)
+	case "infra":
+		b.handleInfra(msg)
+	case "health":
+		b.handleHealth(msg)
 	default:
 		b.reply(msg.Chat.ID, fmt.Sprintf("Unknown command: /%s\nUse /help for available commands.", cmd))
 	}
@@ -121,6 +125,13 @@ func (b *Bot) handleHelp(msg *tgbotapi.Message) {
 	sb.WriteString("🖥️ /vps_direct - VPS Direct IP\n")
 	sb.WriteString("☁️ /vps_warp - Cloudflare WARP\n")
 	sb.WriteString("🏠 /vps_home - Residential IP\n")
+
+	// Infrastructure commands
+	if b.config.IsInfrastructureEnabled() {
+		sb.WriteString("\n<b>Infrastructure:</b>\n")
+		sb.WriteString("🏗️ /infra - Infrastructure overview\n")
+		sb.WriteString("📊 /health - Health status (with metrics)\n")
+	}
 
 	// Dynamic admin commands
 	sb.WriteString("\n<b>Admin:</b>\n")
@@ -563,6 +574,8 @@ func (b *Bot) handleCallback(callback *tgbotapi.CallbackQuery) {
 		b.handleActionCallback(callback, value)
 	case "restart":
 		b.handleRestartCallback(callback, parts)
+	case "infra":
+		b.handleInfraCallback(callback, parts)
 	default:
 		b.answerCallback(callback.ID, "❌ Unknown action")
 	}
@@ -719,7 +732,7 @@ func (b *Bot) handleRestart(msg *tgbotapi.Message, args string) {
 		return
 	}
 
-	// Parse args: "sg" or "sg aeza"
+	// Parse args: "sg" or "sg <upstream>"
 	parts := strings.Fields(args)
 	if len(parts) == 0 {
 		b.reply(msg.Chat.ID, "Usage: /restart sg [upstream]")
@@ -756,14 +769,14 @@ func (b *Bot) handleRestart(msg *tgbotapi.Message, args string) {
 
 // handleRestartCallback handles restart button clicks
 func (b *Bot) handleRestartCallback(callback *tgbotapi.CallbackQuery, parts []string) {
-	// Format: restart:sg:aeza
+	// Format: restart:sg:<upstream>
 	if len(parts) < 3 {
 		b.answerCallback(callback.ID, "❌ Invalid callback")
 		return
 	}
 
 	service := parts[1]  // "sg"
-	upstream := parts[2] // "aeza"
+	upstream := parts[2] // upstream name
 
 	if service != "sg" {
 		b.answerCallback(callback.ID, "❌ Unknown service")

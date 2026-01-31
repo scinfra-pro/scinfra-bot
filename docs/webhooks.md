@@ -28,7 +28,7 @@ Configure each switch-gate instance to send webhooks:
 ```yaml
 webhooks:
   enabled: true
-  url: "http://10.0.5.10:8080/webhook/switch-gate"
+  url: "http://monitoring-server:8080/webhook/switch-gate"
   secret: "${WEBHOOK_SECRET}"
   source: "primary"
   events:
@@ -133,7 +133,7 @@ It's recommended to expose the webhook endpoint only on internal networks (e.g.,
 Example firewall rule:
 ```bash
 # Allow only from VPN subnet
-ufw allow from 10.0.100.0/24 to any port 8080
+ufw allow from 10.0.0.0/8 to any port 8080
 ```
 
 ## Troubleshooting

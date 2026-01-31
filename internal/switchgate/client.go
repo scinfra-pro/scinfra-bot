@@ -290,3 +290,87 @@ func GetModeIcon(mode string) string {
 		return "\u2753" // ❓ Question mark
 	}
 }
+
+// NodeMetrics represents system metrics from node_exporter
+type NodeMetrics struct {
+	// Memory
+	MemoryUsedPercent float64
+	MemoryUsedBytes   float64
+	MemoryTotalBytes  float64
+
+	// Disk (root filesystem)
+	DiskUsedPercent float64
+	DiskUsedBytes   float64
+	DiskTotalBytes  float64
+
+	// CPU (load average as proxy)
+	Load1  float64
+	Load15 float64
+}
+
+// GetNodeMetrics fetches system metrics from node_exporter via SSH
+func (c *Client) GetNodeMetrics() (*NodeMetrics, error) {
+	// Fetch specific metrics we need
+	cmd := `curl -s http://127.0.0.1:9100/metrics | grep -E '^(node_memory_MemTotal_bytes|node_memory_MemAvailable_bytes|node_filesystem_size_bytes\{.*mountpoint="/"\}|node_filesystem_avail_bytes\{.*mountpoint="/"\}|node_load1 |node_load15 )'`
+	output, err := c.exec(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("fetch node metrics: %w", err)
+	}
+
+	metrics := &NodeMetrics{}
+
+	var memTotal, memAvail, diskSize, diskAvail float64
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse Prometheus format: metric_name{labels} value
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		metricName := parts[0]
+		valueStr := parts[len(parts)-1]
+
+		var value float64
+		fmt.Sscanf(valueStr, "%f", &value)
+
+		switch {
+		case strings.HasPrefix(metricName, "node_memory_MemTotal_bytes"):
+			memTotal = value
+		case strings.HasPrefix(metricName, "node_memory_MemAvailable_bytes"):
+			memAvail = value
+		case strings.HasPrefix(metricName, "node_filesystem_size_bytes"):
+			if strings.Contains(metricName, `mountpoint="/"`) {
+				diskSize = value
+			}
+		case strings.HasPrefix(metricName, "node_filesystem_avail_bytes"):
+			if strings.Contains(metricName, `mountpoint="/"`) {
+				diskAvail = value
+			}
+		case metricName == "node_load1":
+			metrics.Load1 = value
+		case metricName == "node_load15":
+			metrics.Load15 = value
+		}
+	}
+
+	// Calculate percentages
+	if memTotal > 0 {
+		metrics.MemoryTotalBytes = memTotal
+		metrics.MemoryUsedBytes = memTotal - memAvail
+		metrics.MemoryUsedPercent = (metrics.MemoryUsedBytes / memTotal) * 100
+	}
+
+	if diskSize > 0 {
+		metrics.DiskTotalBytes = diskSize
+		metrics.DiskUsedBytes = diskSize - diskAvail
+		metrics.DiskUsedPercent = (metrics.DiskUsedBytes / diskSize) * 100
+	}
+
+	return metrics, nil
+}

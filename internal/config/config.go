@@ -8,11 +8,43 @@ import (
 )
 
 type Config struct {
-	Telegram  TelegramConfig       `yaml:"telegram"`
-	Edge      EdgeConfig           `yaml:"edge"`
-	Upstreams map[string]*Upstream `yaml:"upstreams"`
-	Webhooks  WebhooksConfig       `yaml:"webhooks"`
-	Logging   LoggingConfig        `yaml:"logging"`
+	Telegram       TelegramConfig       `yaml:"telegram"`
+	Edge           EdgeConfig           `yaml:"edge"`
+	Upstreams      map[string]*Upstream `yaml:"upstreams"`
+	Webhooks       WebhooksConfig       `yaml:"webhooks"`
+	Logging        LoggingConfig        `yaml:"logging"`
+	Infrastructure InfrastructureConfig `yaml:"infrastructure"`
+}
+
+// InfrastructureConfig configures infrastructure monitoring
+type InfrastructureConfig struct {
+	Enabled       bool          `yaml:"enabled"`
+	PrometheusURL string        `yaml:"prometheus_url"`
+	Clouds        []CloudConfig `yaml:"clouds"`
+}
+
+// CloudConfig represents a cloud provider with servers
+type CloudConfig struct {
+	Name    string         `yaml:"name"` // "Production"
+	Icon    string         `yaml:"icon"` // "☁️"
+	Servers []ServerConfig `yaml:"servers"`
+}
+
+// ServerConfig represents a server to monitor
+type ServerConfig struct {
+	ID            string          `yaml:"id"`             // "edge-gateway"
+	Name          string          `yaml:"name"`           // "edge-gateway"
+	Icon          string          `yaml:"icon"`           // "🖥️"
+	IP            string          `yaml:"ip"`             // "10.0.1.11"
+	ExternalCheck string          `yaml:"external_check"` // "https://51.250.11.142" or "tcp://..."
+	Services      []ServiceConfig `yaml:"services"`
+}
+
+// ServiceConfig represents a service running on a server
+type ServiceConfig struct {
+	Name string `yaml:"name"` // "Nginx"
+	Job  string `yaml:"job"`  // Prometheus job name (optional)
+	Port int    `yaml:"port"` // Port number (optional, for display)
 }
 
 // WebhooksConfig configures the webhook receiver
@@ -109,6 +141,28 @@ func (c *Config) Validate() error {
 			u.SwitchGatePort = 9090
 		}
 	}
+
+	// Set defaults for infrastructure
+	if c.Infrastructure.PrometheusURL == "" {
+		c.Infrastructure.PrometheusURL = "http://localhost:9090"
+	}
+	// Set defaults for servers
+	for i := range c.Infrastructure.Clouds {
+		cloud := &c.Infrastructure.Clouds[i]
+		if cloud.Icon == "" {
+			cloud.Icon = "☁️"
+		}
+		for j := range cloud.Servers {
+			server := &cloud.Servers[j]
+			if server.Name == "" {
+				server.Name = server.ID
+			}
+			if server.Icon == "" {
+				server.Icon = "🖥️"
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -170,4 +224,63 @@ func capitalize(s string) string {
 		return string(s[0]-32) + s[1:]
 	}
 	return s
+}
+
+// GetServer returns server config by ID
+func (c *Config) GetServer(serverID string) *ServerConfig {
+	for i := range c.Infrastructure.Clouds {
+		for j := range c.Infrastructure.Clouds[i].Servers {
+			if c.Infrastructure.Clouds[i].Servers[j].ID == serverID {
+				return &c.Infrastructure.Clouds[i].Servers[j]
+			}
+		}
+	}
+	return nil
+}
+
+// GetServerCloud returns cloud name for a server
+func (c *Config) GetServerCloud(serverID string) string {
+	for i := range c.Infrastructure.Clouds {
+		for j := range c.Infrastructure.Clouds[i].Servers {
+			if c.Infrastructure.Clouds[i].Servers[j].ID == serverID {
+				return c.Infrastructure.Clouds[i].Name
+			}
+		}
+	}
+	return ""
+}
+
+// GetAllServers returns all server configs
+func (c *Config) GetAllServers() []ServerConfig {
+	var servers []ServerConfig
+	for _, cloud := range c.Infrastructure.Clouds {
+		servers = append(servers, cloud.Servers...)
+	}
+	return servers
+}
+
+// IsInfrastructureEnabled returns true if infrastructure monitoring is configured
+func (c *Config) IsInfrastructureEnabled() bool {
+	return c.Infrastructure.Enabled && len(c.Infrastructure.Clouds) > 0
+}
+
+// GetUpstreamByIP finds upstream key by IP address
+// Returns empty string if not found
+func (c *Config) GetUpstreamByIP(ip string) string {
+	for key, u := range c.Upstreams {
+		if u.IP == ip {
+			return key
+		}
+	}
+	return ""
+}
+
+// IsSwitchGateServer checks if server has a switch-gate upstream by IP
+func (c *Config) IsSwitchGateServer(ip string) bool {
+	for _, u := range c.Upstreams {
+		if u.IP == ip && u.SwitchGate {
+			return true
+		}
+	}
+	return false
 }

@@ -25,7 +25,7 @@ telegram:
 
 edge:
   name: "Cloud Provider"
-  host: "user@10.0.1.11"
+  host: "user@gateway.example.com"
   key_path: ""
   vpn_mode_script: "/usr/local/bin/vpn-mode.sh"
 
@@ -111,6 +111,95 @@ Webhook receiver for notifications from switch-gate.
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `level` | No | `info` | Log level: debug, info, warn, error |
+
+### infrastructure
+
+Infrastructure monitoring configuration. Enables `/infra` and `/health` commands.
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `enabled` | No | `false` | Enable infrastructure monitoring |
+| `prometheus_url` | No | `http://localhost:9090` | Prometheus API URL |
+| `clouds` | No | `[]` | List of cloud providers with servers |
+
+#### Cloud Configuration
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | Yes | - | Cloud provider name (e.g., "Production", "Staging") |
+| `icon` | No | `☁️` | Emoji icon for the cloud |
+| `servers` | Yes | - | List of servers |
+
+#### Server Configuration
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `id` | Yes | - | Unique server identifier |
+| `name` | No | Same as `id` | Display name |
+| `icon` | No | `🖥️` | Emoji icon |
+| `ip` | Yes | - | Internal IP address for Prometheus queries |
+| `external_check` | No | - | URL for external accessibility check |
+| `services` | No | `[]` | List of services to monitor |
+
+**External check formats:**
+- `https://example.com` - HTTPS check (accepts 2xx/3xx)
+- `http://example.com` - HTTP check
+- `tcp://1.2.3.4:443` - TCP port check
+
+#### Service Configuration
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | Yes | - | Service display name |
+| `job` | No | - | Prometheus job name for health check |
+| `port` | No | - | Port number (for display) |
+
+Example infrastructure configuration:
+
+```yaml
+infrastructure:
+  enabled: true
+  prometheus_url: "http://localhost:9090"
+  
+  clouds:
+    - name: "Production"
+      icon: "☁️"
+      servers:
+        - id: gateway
+          name: "gateway"
+          icon: "🖥️"
+          ip: "10.0.1.10"
+          external_check: "https://gateway.example.com"
+          services:
+            - name: "Nginx"
+              job: "nginx"
+            - name: "WireGuard"
+              port: 51820
+              
+        - id: web-server
+          name: "web-server"
+          icon: "🌐"
+          ip: "10.0.2.10"
+          external_check: "https://web.example.com"
+          
+    - name: "Remote 1"
+      icon: "☁️"
+      servers:
+        - id: vps-primary
+          name: "vps-primary"
+          icon: "📍"
+          ip: "1.2.3.4"
+          external_check: "tcp://1.2.3.4:443"
+          
+    - name: "Remote 2"
+      icon: "☁️"
+      servers:
+        - id: vps-secondary
+          name: "vps-secondary"
+          icon: "📍"
+          ip: "5.6.7.8"
+          external_check: "tcp://5.6.7.8:443"
+```
 
 ## Environment Variables
 
