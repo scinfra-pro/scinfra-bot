@@ -56,7 +56,7 @@ func (c *Client) Query(promql string) ([]QueryResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("prometheus query failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("prometheus returned status %d", resp.StatusCode)
@@ -226,7 +226,7 @@ func (c *Client) Ping() error {
 	if err != nil {
 		return fmt.Errorf("prometheus not reachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("prometheus health check failed: status %d", resp.StatusCode)

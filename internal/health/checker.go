@@ -335,16 +335,17 @@ func (c *Checker) checkSwitchGateServer(status *ServerStatus, server *config.Ser
 			Port: svc.Port,
 		}
 
-		if svc.Name == "switch-gate" {
+		switch svc.Name {
+		case "switch-gate":
 			// switch-gate is up if we got status
 			svcStatus.IsUp = true
-		} else if svc.Name == "gost" {
+		case "gost":
 			// gost is up if switch-gate is running (they're related)
 			svcStatus.IsUp = true
-		} else if svc.Name == "node_exporter" {
+		case "node_exporter":
 			// node_exporter is up if we got metrics
 			svcStatus.IsUp = status.Memory > 0
-		} else {
+		default:
 			// Other services - assume up if server responds
 			svcStatus.IsUp = true
 		}
@@ -384,7 +385,7 @@ func (c *Checker) checkHTTP(url string, start time.Time) (bool, time.Duration, e
 	if err != nil {
 		return false, latency, fmt.Errorf("connection failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Consider 2xx and 3xx as success
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
@@ -402,7 +403,7 @@ func (c *Checker) checkTCP(addr string, start time.Time) (bool, time.Duration, e
 	if err != nil {
 		return false, latency, fmt.Errorf("connection failed: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	return true, latency, nil
 }

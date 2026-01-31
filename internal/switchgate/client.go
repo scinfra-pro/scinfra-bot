@@ -337,7 +337,7 @@ func (c *Client) GetNodeMetrics() (*NodeMetrics, error) {
 		valueStr := parts[len(parts)-1]
 
 		var value float64
-		fmt.Sscanf(valueStr, "%f", &value)
+		_, _ = fmt.Sscanf(valueStr, "%f", &value)
 
 		switch {
 		case strings.HasPrefix(metricName, "node_memory_MemTotal_bytes"):
