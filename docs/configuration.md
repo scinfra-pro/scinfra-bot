@@ -147,20 +147,38 @@ s3:
 | `true` | Yes | S3 data (edge, upstreams, clouds) replaces YAML |
 | `true` | No | Warning + YAML fallback |
 
-**Metadata JSON format:**
+**Metadata JSON format (schema v1.2):**
 
 Each provider file should contain:
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.2",
   "provider": "cloud-name",
   "cloud": {"name": "Cloud Name", "icon": "☁️"},
-  "servers": [...],
+  "servers": [
+    {
+      "id": "unique-cloud-id",
+      "server_name": "technical-name",
+      "name": "display-name",
+      "prometheus_instance": "prometheus-label",
+      "ip": "10.0.1.1",
+      "services": [...]
+    }
+  ],
   "edge": {...},
   "upstream": {...}
 }
 ```
+
+**Server fields:**
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique identifier from cloud provider |
+| `server_name` | Technical name (FQDN, VM name) |
+| `name` | Display name for UI (falls back to `server_name`) |
+| `prometheus_instance` | Instance label for Prometheus queries (null for non-Prometheus) |
 
 See Terraform integration documentation for generating metadata files.
 

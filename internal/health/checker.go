@@ -211,8 +211,14 @@ func (c *Checker) checkServer(server *config.ServerConfig, cloudName, cloudIcon 
 
 // checkPrometheusServer checks a server using Prometheus metrics
 func (c *Checker) checkPrometheusServer(status *ServerStatus, server *config.ServerConfig) {
-	// Check if server is up via Prometheus (use server.ID as instance label)
-	isUp, err := c.prometheus.IsUp(server.ID)
+	// Use PrometheusInstance for queries (matches instance label in Prometheus config)
+	promInstance := server.PrometheusInstance
+	if promInstance == "" {
+		promInstance = server.Name // Fallback to name if not set
+	}
+
+	// Check if server is up via Prometheus
+	isUp, err := c.prometheus.IsUp(promInstance)
 	if err != nil {
 		status.IsUp = false
 	} else {
@@ -222,30 +228,30 @@ func (c *Checker) checkPrometheusServer(status *ServerStatus, server *config.Ser
 	// Get metrics only if server is up
 	if status.IsUp {
 		// CPU
-		if cpu, err := c.prometheus.GetCPU(server.ID); err == nil {
+		if cpu, err := c.prometheus.GetCPU(promInstance); err == nil {
 			status.CPU = cpu
 		}
 
 		// Memory
-		if mem, err := c.prometheus.GetMemory(server.ID); err == nil {
+		if mem, err := c.prometheus.GetMemory(promInstance); err == nil {
 			status.Memory = mem
 		}
-		if used, total, err := c.prometheus.GetMemoryBytes(server.ID); err == nil {
+		if used, total, err := c.prometheus.GetMemoryBytes(promInstance); err == nil {
 			status.MemoryUsedGB = used / (1024 * 1024 * 1024)
 			status.MemoryTotalGB = total / (1024 * 1024 * 1024)
 		}
 
 		// Disk
-		if disk, err := c.prometheus.GetDisk(server.ID); err == nil {
+		if disk, err := c.prometheus.GetDisk(promInstance); err == nil {
 			status.Disk = disk
 		}
-		if used, total, err := c.prometheus.GetDiskBytes(server.ID); err == nil {
+		if used, total, err := c.prometheus.GetDiskBytes(promInstance); err == nil {
 			status.DiskUsedGB = used / (1024 * 1024 * 1024)
 			status.DiskTotalGB = total / (1024 * 1024 * 1024)
 		}
 
 		// Uptime
-		if uptime, err := c.prometheus.GetUptime(server.ID); err == nil {
+		if uptime, err := c.prometheus.GetUptime(promInstance); err == nil {
 			status.Uptime = uptime
 		}
 	}
@@ -259,8 +265,8 @@ func (c *Checker) checkPrometheusServer(status *ServerStatus, server *config.Ser
 		}
 
 		if svc.Job != "" {
-			// Check via Prometheus job (use server.ID as instance label)
-			isUp, err := c.prometheus.IsServiceUp(svc.Job, server.ID)
+			// Check via Prometheus job
+			isUp, err := c.prometheus.IsServiceUp(svc.Job, promInstance)
 			svcStatus.IsUp = isUp
 			if err != nil {
 				svcStatus.Error = err.Error()

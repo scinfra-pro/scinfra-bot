@@ -33,12 +33,13 @@ type CloudConfig struct {
 
 // ServerConfig represents a server to monitor
 type ServerConfig struct {
-	ID            string          `yaml:"id"`             // "edge-gateway"
-	Name          string          `yaml:"name"`           // "edge-gateway"
-	Icon          string          `yaml:"icon"`           // "🖥️"
-	IP            string          `yaml:"ip"`             // "10.0.1.11"
-	ExternalCheck string          `yaml:"external_check"` // "https://51.250.11.142" or "tcp://..."
-	Services      []ServiceConfig `yaml:"services"`
+	ID                 string          `yaml:"id"`                  // Unique identifier
+	Name               string          `yaml:"name"`                // Display name
+	Icon               string          `yaml:"icon"`                // "🖥️"
+	IP                 string          `yaml:"ip"`                  // "10.0.1.11"
+	ExternalCheck      string          `yaml:"external_check"`      // "https://51.250.11.142" or "tcp://..."
+	PrometheusInstance string          `yaml:"prometheus_instance"` // Instance label for Prometheus queries
+	Services           []ServiceConfig `yaml:"services"`
 }
 
 // ServiceConfig represents a service running on a server

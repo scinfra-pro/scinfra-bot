@@ -46,13 +46,15 @@ type ProviderMetadata struct {
 
 	// Servers
 	Servers []struct {
-		ID            string `json:"id"`
-		Name          string `json:"name"`
-		Icon          string `json:"icon"`
-		IP            string `json:"ip"`
-		ExternalIP    string `json:"external_ip"`
-		ExternalCheck string `json:"external_check"`
-		Services      []struct {
+		ID                 string `json:"id"`                  // Unique identifier (from cloud provider)
+		ServerName         string `json:"server_name"`         // Technical name from cloud provider
+		Name               string `json:"name"`                // Display name (falls back to server_name)
+		PrometheusInstance string `json:"prometheus_instance"` // Instance label for Prometheus queries
+		Icon               string `json:"icon"`
+		IP                 string `json:"ip"`
+		ExternalIP         string `json:"external_ip"`
+		ExternalCheck      string `json:"external_check"`
+		Services           []struct {
 			Name string `json:"name"`
 			Job  string `json:"job"`
 			Port int    `json:"port"`
@@ -215,13 +217,26 @@ func (l *S3Loader) processMetadata(pm *ProviderMetadata, metadata *S3Metadata) {
 				})
 			}
 
+			// Display name: use Name if set, otherwise fall back to ServerName
+			displayName := s.Name
+			if displayName == "" {
+				displayName = s.ServerName
+			}
+
+			// Prometheus instance: use PrometheusInstance if set, otherwise fall back to Name
+			promInstance := s.PrometheusInstance
+			if promInstance == "" {
+				promInstance = displayName
+			}
+
 			cloud.Servers = append(cloud.Servers, ServerConfig{
-				ID:            s.ID,
-				Name:          s.Name,
-				Icon:          s.Icon,
-				IP:            s.IP,
-				ExternalCheck: s.ExternalCheck,
-				Services:      services,
+				ID:                 s.ID,
+				Name:               displayName,
+				Icon:               s.Icon,
+				IP:                 s.IP,
+				ExternalCheck:      s.ExternalCheck,
+				PrometheusInstance: promInstance,
+				Services:           services,
 			})
 		}
 
