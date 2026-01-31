@@ -126,9 +126,9 @@ func (c *Config) MergeS3Metadata(metadata *S3Metadata) {
 		}
 	}
 
-	// Merge infrastructure clouds (S3 adds to YAML)
+	// Replace infrastructure clouds (S3 takes precedence)
 	if len(metadata.Clouds) > 0 {
-		c.Infrastructure.Clouds = append(c.Infrastructure.Clouds, metadata.Clouds...)
+		c.Infrastructure.Clouds = metadata.Clouds
 		c.Infrastructure.Enabled = true
 	}
 }

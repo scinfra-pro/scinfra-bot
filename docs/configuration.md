@@ -17,11 +17,39 @@ nano /etc/scinfra-bot/config.yaml
 
 ## Configuration File Structure
 
+### Minimal (S3 Dynamic Mode)
+
+```yaml
+# Secrets only - infrastructure from S3
+telegram:
+  token: "${TELEGRAM_BOT_TOKEN}"
+  allowed_chat_ids:
+    - 123456789
+
+s3:
+  enabled: true
+  bucket: "my-storage"
+  endpoint: "https://s3.example.com"
+  region: "us-east-1"
+  providers: ["cloud.json", "upstream1.json"]
+
+webhooks:
+  enabled: true
+  secret: "${WEBHOOK_SECRET}"
+
+infrastructure:
+  prometheus_url: "http://localhost:9090"
+```
+
+### Full (Static YAML Mode)
+
 ```yaml
 telegram:
   token: "${TELEGRAM_BOT_TOKEN}"
   allowed_chat_ids:
     - 123456789
+
+# s3.enabled: false (or omit s3 section entirely)
 
 edge:
   name: "Cloud Provider"
@@ -44,9 +72,97 @@ webhooks:
 
 logging:
   level: "info"
+
+infrastructure:
+  enabled: true
+  prometheus_url: "http://localhost:9090"
+  clouds:
+    - name: "Production"
+      servers:
+        - id: gateway
+          ip: "10.0.1.10"
 ```
 
+## Configuration Modes
+
+The bot supports two configuration modes:
+
+| Mode | Description |
+|------|-------------|
+| **Static (YAML)** | All configuration in YAML file |
+| **Dynamic (S3)** | Infrastructure loaded from S3, secrets in YAML |
+
+### Static Mode (Default)
+
+Configure everything in YAML. Simple and straightforward.
+
+### Dynamic Mode (S3)
+
+Infrastructure metadata (edge, upstreams, servers) is loaded from S3-compatible storage. Useful when infrastructure is managed by Terraform - metadata is generated and uploaded automatically after `terraform apply`.
+
+**Benefits:**
+- Single source of truth (Terraform)
+- No manual config updates when infrastructure changes
+- Automatic fallback to YAML if S3 is unavailable
+
 ## Sections
+
+### s3
+
+Dynamic configuration from S3-compatible storage.
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `enabled` | No | `false` | Enable S3 metadata loading |
+| `bucket` | Yes* | - | S3 bucket name |
+| `prefix` | No | `metadata/` | Object key prefix |
+| `endpoint` | Yes* | - | S3-compatible endpoint URL |
+| `region` | Yes* | - | S3 region |
+| `profile` | No | `default` | AWS CLI profile name |
+| `providers` | Yes* | - | List of metadata JSON files to load |
+
+*Required when `enabled: true`
+
+Example:
+
+```yaml
+s3:
+  enabled: true
+  bucket: "my-storage"
+  prefix: "metadata/"
+  endpoint: "https://s3.example.com"
+  region: "us-east-1"
+  profile: "default"
+  providers:
+    - "cloud.json"      # Main cloud (edge + servers)
+    - "upstream1.json"  # VPS upstream
+    - "upstream2.json"  # VPS upstream
+```
+
+**Behavior:**
+
+| `s3.enabled` | S3 Available | Result |
+|--------------|--------------|--------|
+| `false` | - | YAML only |
+| `true` | Yes | S3 data (edge, upstreams, clouds) replaces YAML |
+| `true` | No | Warning + YAML fallback |
+
+**Metadata JSON format:**
+
+Each provider file should contain:
+
+```json
+{
+  "schema_version": "1.0",
+  "provider": "cloud-name",
+  "cloud": {"name": "Cloud Name", "icon": "☁️"},
+  "servers": [...],
+  "edge": {...},
+  "upstream": {...}
+}
+```
+
+See Terraform integration documentation for generating metadata files.
 
 ### telegram
 
