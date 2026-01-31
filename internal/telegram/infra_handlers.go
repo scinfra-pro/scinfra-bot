@@ -62,6 +62,11 @@ func (b *Bot) buildInfraMessage() (string, tgbotapi.InlineKeyboardMarkup) {
 // buildHealthMessage builds the health status message
 // force=true bypasses cache and fetches fresh data
 func (b *Bot) buildHealthMessage(force bool) (string, tgbotapi.InlineKeyboardMarkup) {
+	// Check if health checker is initialized
+	if b.healthChecker == nil {
+		return "❌ Health checker not initialized.\n\nCheck infrastructure configuration.", tgbotapi.InlineKeyboardMarkup{}
+	}
+
 	var statuses []*health.ServerStatus
 	var err error
 
@@ -112,6 +117,11 @@ func (b *Bot) buildHealthMessage(force bool) (string, tgbotapi.InlineKeyboardMar
 // force=true bypasses cache and fetches fresh data
 func (b *Bot) buildServerDetailMessage(serverID, source string, force bool) (string, tgbotapi.InlineKeyboardMarkup) {
 	var status *health.ServerStatus
+	// Check if health checker is initialized
+	if b.healthChecker == nil {
+		return "❌ Health checker not initialized.", tgbotapi.InlineKeyboardMarkup{}
+	}
+
 	var err error
 
 	if force {
