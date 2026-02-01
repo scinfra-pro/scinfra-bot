@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strings"
@@ -211,14 +212,19 @@ func (c *Client) GetStatus() (*Status, error) {
 	cmd := fmt.Sprintf("curl -s http://127.0.0.1:%d/status", c.apiPort)
 	output, err := c.exec(cmd)
 	if err != nil {
+		log.Printf("[%s] GetStatus: exec error: %v", c.name, err)
 		return nil, err
 	}
 
+	log.Printf("[%s] GetStatus: response: %s", c.name, strings.TrimSpace(output))
+
 	var status Status
 	if err := json.Unmarshal([]byte(output), &status); err != nil {
+		log.Printf("[%s] GetStatus: parse error: %v", c.name, err)
 		return nil, fmt.Errorf("parse status: %w", err)
 	}
 
+	log.Printf("[%s] GetStatus: mode=%s", c.name, status.Mode)
 	return &status, nil
 }
 
@@ -242,21 +248,29 @@ func (c *Client) GetStatusWithCheck() (*Status, error) {
 // SetMode changes switch-gate mode
 func (c *Client) SetMode(mode string) error {
 	cmd := fmt.Sprintf("curl -s -X POST http://127.0.0.1:%d/mode/%s", c.apiPort, mode)
+	log.Printf("[%s] SetMode(%s): executing %s", c.name, mode, cmd)
+
 	output, err := c.exec(cmd)
 	if err != nil {
+		log.Printf("[%s] SetMode(%s): exec error: %v", c.name, mode, err)
 		return err
 	}
+
+	log.Printf("[%s] SetMode(%s): response: %s", c.name, mode, strings.TrimSpace(output))
 
 	// Check response
 	var resp map[string]interface{}
 	if err := json.Unmarshal([]byte(output), &resp); err != nil {
+		log.Printf("[%s] SetMode(%s): parse error: %v", c.name, mode, err)
 		return fmt.Errorf("parse response: %w", err)
 	}
 
 	if errMsg, ok := resp["error"]; ok {
+		log.Printf("[%s] SetMode(%s): API error: %v", c.name, mode, errMsg)
 		return fmt.Errorf("%v", errMsg)
 	}
 
+	log.Printf("[%s] SetMode(%s): success", c.name, mode)
 	return nil
 }
 

@@ -76,6 +76,8 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.handleInfra(msg)
 	case "health":
 		b.handleHealth(msg)
+	case "diag":
+		b.handleDiag(msg)
 	default:
 		b.reply(msg.Chat.ID, fmt.Sprintf("Unknown command: /%s\nUse /help for available commands.", cmd))
 	}
@@ -135,6 +137,7 @@ func (b *Bot) handleHelp(msg *tgbotapi.Message) {
 
 	// Dynamic admin commands
 	sb.WriteString("\n<b>Admin:</b>\n")
+	sb.WriteString("🔍 /diag - Diagnostics (test VPS connections)\n")
 	sb.WriteString("🔄 /restart - Restart services menu\n")
 	sb.WriteString("🔁 /restart_sg - Restart switch-gate (current upstream)\n")
 	for _, name := range b.config.GetUpstreamNames() {
@@ -166,10 +169,64 @@ func (b *Bot) buildStatusMessage() (string, tgbotapi.InlineKeyboardMarkup) {
 	// Get VPS mode if switch-gate is available
 	vpsMode := ""
 	vpsModeLine := ""
+	vpsError := ""
 	if sgClient := b.getSwitchGateClient(status.Server); sgClient != nil {
 		if vpsStatus, err := sgClient.GetStatus(); err == nil {
 			vpsMode = vpsStatus.Mode
 			vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s", b.getVPSModeIcon(vpsStatus.Mode), vpsStatus.Mode)
+		} else {
+			// Show error instead of silently ignoring
+			vpsModeLine = "\n└ VPS Mode: ❌ error"
+			vpsError = fmt.Sprintf("\n\n⚠️ <b>VPS Error:</b> <code>%v</code>", err)
+		}
+	}
+
+	modeIcon := b.getModeIcon(status.Mode)
+
+	text := fmt.Sprintf(`ℹ️ <b>VPN Status</b>
+
+<b>Edge-gateway:</b>
+├ Mode: %s %s
+├ Upstream: %s%s
+
+<b>Current IP:</b> <code>%s</code>%s`,
+		modeIcon, status.Mode,
+		status.Server,
+		vpsModeLine,
+		ip,
+		vpsError,
+	)
+
+	keyboard := b.buildStatusKeyboard(status.Mode, status.Server, vpsMode)
+	return text, keyboard
+}
+
+// buildStatusMessageAfterSetMode builds status after successful SetMode
+// If GetStatus fails, shows the mode we just set with a warning
+func (b *Bot) buildStatusMessageAfterSetMode(setMode string) (string, tgbotapi.InlineKeyboardMarkup) {
+	status, err := b.edgeClient.GetStatus()
+	if err != nil {
+		return fmt.Sprintf("❌ Error getting status: %v", err), tgbotapi.InlineKeyboardMarkup{}
+	}
+
+	ip, err := b.edgeClient.GetExternalIP()
+	if err != nil {
+		ip = "unknown"
+	}
+
+	// Try to get VPS status
+	vpsMode := setMode // Default to mode we just set
+	vpsStatusOK := false
+	vpsModeLine := ""
+	if sgClient := b.getSwitchGateClient(status.Server); sgClient != nil {
+		if vpsStatus, err := sgClient.GetStatus(); err == nil {
+			// GetStatus worked - use real mode
+			vpsMode = vpsStatus.Mode
+			vpsStatusOK = true
+			vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s", b.getVPSModeIcon(vpsStatus.Mode), vpsStatus.Mode)
+		} else {
+			// GetStatus failed - use mode we just set, show warning
+			vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s ⚠️ (status unavailable)", b.getVPSModeIcon(setMode), setMode)
 		}
 	}
 
@@ -188,7 +245,8 @@ func (b *Bot) buildStatusMessage() (string, tgbotapi.InlineKeyboardMarkup) {
 		ip,
 	)
 
-	keyboard := b.buildStatusKeyboard(status.Mode, status.Server, vpsMode)
+	// Build keyboard: checkmark on vpsMode, with warning if status unavailable
+	keyboard := b.buildStatusKeyboardWithHealth(status.Mode, status.Server, vpsMode, vpsStatusOK)
 	return text, keyboard
 }
 
@@ -207,25 +265,29 @@ func (b *Bot) buildStatusMessageWithCheck() (string, tgbotapi.InlineKeyboardMark
 
 	// Get VPS status with health check
 	vpsMode := ""
-	failedVPSMode := ""
+	vpsHealthy := true
 	vpsModeLine := ""
+	vpsError := ""
 	if sgClient := b.getSwitchGateClient(status.Server); sgClient != nil {
 		// Use GetStatusWithCheck for health verification
 		if vpsStatus, err := sgClient.GetStatusWithCheck(); err == nil {
+			vpsMode = vpsStatus.Mode // Always use real mode from API
+
 			// Check if mode is healthy
 			if vpsStatus.ModeHealthy != nil && !*vpsStatus.ModeHealthy {
-				// Mode is not working - traffic goes through direct (fallback)
-				failedVPSMode = vpsStatus.Mode
-				vpsMode = "direct" // Fallback mode
+				vpsHealthy = false
 				errorInfo := ""
 				if vpsStatus.ModeError != nil {
 					errorInfo = fmt.Sprintf(" (%s)", *vpsStatus.ModeError)
 				}
-				vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s ❌%s", b.getVPSModeIcon(vpsStatus.Mode), vpsStatus.Mode, errorInfo)
+				vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s ⚠️%s", b.getVPSModeIcon(vpsStatus.Mode), vpsStatus.Mode, errorInfo)
 			} else {
-				vpsMode = vpsStatus.Mode
 				vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s ✓", b.getVPSModeIcon(vpsStatus.Mode), vpsStatus.Mode)
 			}
+		} else {
+			// Show error instead of silently ignoring
+			vpsModeLine = "\n└ VPS Mode: ❌ error"
+			vpsError = fmt.Sprintf("\n\n⚠️ <b>VPS Error:</b> <code>%v</code>", err)
 		}
 	}
 
@@ -237,14 +299,16 @@ func (b *Bot) buildStatusMessageWithCheck() (string, tgbotapi.InlineKeyboardMark
 ├ Mode: %s %s
 ├ Upstream: %s%s
 
-<b>Current IP:</b> <code>%s</code>`,
+<b>Current IP:</b> <code>%s</code>%s`,
 		modeIcon, status.Mode,
 		status.Server,
 		vpsModeLine,
 		ip,
+		vpsError,
 	)
 
-	keyboard := b.buildStatusKeyboardWithFailed(status.Mode, status.Server, vpsMode, failedVPSMode)
+	// Checkmark on real mode, warning indicator if unhealthy
+	keyboard := b.buildStatusKeyboardWithHealth(status.Mode, status.Server, vpsMode, vpsHealthy)
 	return text, keyboard
 }
 
@@ -627,8 +691,9 @@ func (b *Bot) handleVPSCallback(callback *tgbotapi.CallbackQuery, mode string) {
 		return
 	}
 
-	// Update message with new status
-	text, keyboard := b.buildStatusMessage()
+	// SetMode succeeded - update message with new status
+	// Use buildStatusMessageAfterSetMode to handle case when GetStatus fails
+	text, keyboard := b.buildStatusMessageAfterSetMode(mode)
 	b.editMessageWithKeyboard(callback.Message.Chat.ID, callback.Message.MessageID, text, keyboard)
 	b.answerCallback(callback.ID, fmt.Sprintf("✅ VPS → %s", mode))
 }
@@ -808,4 +873,65 @@ func (b *Bot) restartSwitchGate(chatID int64, upstream string) {
 	}
 
 	b.reply(chatID, fmt.Sprintf("✅ switch-gate restarted (%s)", capitalize(upstream)))
+}
+
+// handleDiag performs diagnostics on all VPS connections
+func (b *Bot) handleDiag(msg *tgbotapi.Message) {
+	var sb strings.Builder
+	sb.WriteString("🔍 <b>Diagnostics</b>\n")
+
+	// Edge gateway check
+	sb.WriteString("\n<b>Edge Gateway:</b>\n")
+	edgeStatus, edgeErr := b.edgeClient.GetStatus()
+	if edgeErr != nil {
+		sb.WriteString(fmt.Sprintf("  ❌ SSH Error: <code>%v</code>\n", edgeErr))
+	} else {
+		sb.WriteString("  ✅ Connected\n")
+		sb.WriteString(fmt.Sprintf("  └ Mode: %s, Server: %s\n", edgeStatus.Mode, edgeStatus.Server))
+	}
+
+	// Check each upstream
+	sb.WriteString("\n<b>Upstreams (switch-gate):</b>\n")
+	upstreamNames := b.config.GetUpstreamNames()
+
+	for _, name := range upstreamNames {
+		upstream := b.config.GetUpstream(name)
+		sb.WriteString(fmt.Sprintf("\n📍 <b>%s</b> (<code>%s</code>)\n", capitalize(name), upstream.IP))
+
+		sgClient := b.getSwitchGateClient(name)
+		if sgClient == nil {
+			sb.WriteString("  ⚠️ switch-gate not configured\n")
+			continue
+		}
+
+		// Test GetStatus (fast, no health check)
+		status, err := sgClient.GetStatus()
+		if err != nil {
+			sb.WriteString("  ❌ <b>GetStatus Error:</b>\n")
+			sb.WriteString(fmt.Sprintf("  <code>%v</code>\n", err))
+			continue
+		}
+
+		sb.WriteString("  ✅ API OK\n")
+		sb.WriteString(fmt.Sprintf("  └ Mode: %s\n", status.Mode))
+		sb.WriteString(fmt.Sprintf("  └ Available: %v\n", status.Available))
+
+		// Test SetMode (dry-run: set to current mode)
+		sb.WriteString(fmt.Sprintf("  └ Testing SetMode(%s)... ", status.Mode))
+		if err := sgClient.SetMode(status.Mode); err != nil {
+			sb.WriteString(fmt.Sprintf("❌ <code>%v</code>\n", err))
+		} else {
+			sb.WriteString("✅\n")
+		}
+
+		// Get external IP through switch-gate
+		sb.WriteString("  └ Getting external IP... ")
+		if ip, err := sgClient.GetExternalIP(); err != nil {
+			sb.WriteString(fmt.Sprintf("❌ <code>%v</code>\n", err))
+		} else {
+			sb.WriteString(fmt.Sprintf("✅ <code>%s</code>\n", ip))
+		}
+	}
+
+	b.reply(msg.Chat.ID, sb.String())
 }

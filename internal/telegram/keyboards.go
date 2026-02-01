@@ -10,18 +10,19 @@ import (
 
 // buildStatusKeyboard builds inline keyboard for /status command
 func (b *Bot) buildStatusKeyboard(edgeMode, upstream, vpsMode string) tgbotapi.InlineKeyboardMarkup {
-	return b.buildStatusKeyboardWithFailed(edgeMode, upstream, vpsMode, "")
+	return b.buildStatusKeyboardWithHealth(edgeMode, upstream, vpsMode, true)
 }
 
-// buildStatusKeyboardWithFailed builds inline keyboard with failed mode indicator
-func (b *Bot) buildStatusKeyboardWithFailed(edgeMode, upstream, vpsMode, failedVPSMode string) tgbotapi.InlineKeyboardMarkup {
+// buildStatusKeyboardWithHealth builds inline keyboard with health indicator
+// Checkmark is always on the real mode, warning shown if unhealthy
+func (b *Bot) buildStatusKeyboardWithHealth(edgeMode, upstream, vpsMode string, vpsHealthy bool) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		// Edge-gateway modes
 		b.buildEdgeRow(edgeMode),
 		// Upstream VPS selection
 		b.buildUpstreamRow(upstream),
-		// VPS modes (switch-gate) with failed mode support
-		b.buildVPSRowWithFailed(vpsMode, failedVPSMode),
+		// VPS modes (switch-gate) with health indicator
+		b.buildVPSRowWithHealth(vpsMode, vpsHealthy),
 		// Action buttons
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔄 Refresh", "action:refresh"),
@@ -74,9 +75,9 @@ func (b *Bot) buildUpstreamRow(currentUpstream string) []tgbotapi.InlineKeyboard
 	return buttons
 }
 
-// buildVPSRowWithFailed builds VPS mode buttons with failed mode indicator
-// failedMode is shown with ❌ to indicate the mode is not working
-func (b *Bot) buildVPSRowWithFailed(currentMode, failedMode string) []tgbotapi.InlineKeyboardButton {
+// buildVPSRowWithHealth builds VPS mode buttons with health indicator
+// Checkmark is always on currentMode, with optional warning if unhealthy
+func (b *Bot) buildVPSRowWithHealth(currentMode string, healthy bool) []tgbotapi.InlineKeyboardButton {
 	modes := []struct {
 		mode  string
 		icon  string
@@ -90,12 +91,14 @@ func (b *Bot) buildVPSRowWithFailed(currentMode, failedMode string) []tgbotapi.I
 	var buttons []tgbotapi.InlineKeyboardButton
 	for _, m := range modes {
 		label := fmt.Sprintf("%s %s", m.icon, m.label)
-		if strings.EqualFold(failedMode, m.mode) {
-			// Mode is not working
-			label += " ❌"
-		} else if strings.EqualFold(currentMode, m.mode) {
-			// Active mode
-			label += " ✓"
+		if strings.EqualFold(currentMode, m.mode) {
+			// Always show checkmark on current mode
+			if healthy {
+				label += " ✓"
+			} else {
+				// Current mode but unhealthy - show warning
+				label += " ⚠️"
+			}
 		}
 		buttons = append(buttons, tgbotapi.NewInlineKeyboardButtonData(label, "vps:"+m.mode))
 	}

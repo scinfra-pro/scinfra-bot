@@ -75,6 +75,19 @@ cd scinfra-bot
 make build
 ```
 
+## Development
+
+```bash
+# Run locally
+go run ./cmd/bot -config configs/config.yaml
+
+# Build
+make build
+
+# Lint
+make lint
+```
+
 ## Requirements
 
 - Go 1.21+
