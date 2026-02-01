@@ -47,6 +47,13 @@ type ServerStatus struct {
 
 	// Services status
 	Services []ServiceStatus
+
+	// SSH statistics (for remote VPS via switch-gate)
+	SSHLatency      time.Duration // Last SSH command latency
+	SSHSuccessCount int           // Successful SSH commands since restart
+	SSHErrorCount   int           // Failed SSH commands since restart
+	SSHLastError    string        // Last SSH error message
+	SSHLastErrorAt  time.Time     // Time of last SSH error
 }
 
 // ServiceStatus represents the health status of a service
@@ -67,12 +74,25 @@ const (
 	StatusDown     StatusLevel = "down"     // 🛑
 )
 
+// EdgeSSHStats holds SSH statistics from edge-gateway
+type EdgeSSHStats struct {
+	SuccessCount int
+	ErrorCount   int
+	LastLatency  time.Duration
+	LastError    string
+	LastErrorAt  time.Time
+}
+
+// EdgeSSHStatsGetter is a function that returns edge SSH stats
+type EdgeSSHStatsGetter func() EdgeSSHStats
+
 // Checker performs health checks on infrastructure
 type Checker struct {
 	prometheus        *prometheus.Client
 	config            *config.Config
 	httpClient        *http.Client
 	switchGateClients map[string]*switchgate.Client // key is upstream name (e.g., "primary")
+	edgeSSHStatsFunc  EdgeSSHStatsGetter            // for edge-gateway SSH stats
 
 	// Cache
 	cache     map[string]*ServerStatus // serverID -> status
@@ -102,6 +122,11 @@ func NewChecker(cfg *config.Config, sgClients map[string]*switchgate.Client) *Ch
 			},
 		},
 	}
+}
+
+// SetEdgeSSHStatsFunc sets the function to get edge-gateway SSH stats
+func (c *Checker) SetEdgeSSHStatsFunc(fn EdgeSSHStatsGetter) {
+	c.edgeSSHStatsFunc = fn
 }
 
 // CheckAll checks all configured servers (uses cache if valid)
@@ -278,6 +303,35 @@ func (c *Checker) checkPrometheusServer(status *ServerStatus, server *config.Ser
 
 		status.Services = append(status.Services, svcStatus)
 	}
+
+	// Check if this is edge-gateway and add SSH statistics
+	isEdge := c.isEdgeGateway(server.ID, server.Name, server.IP)
+	if c.edgeSSHStatsFunc != nil && isEdge {
+		sshStats := c.edgeSSHStatsFunc()
+		status.SSHLatency = sshStats.LastLatency
+		status.SSHSuccessCount = sshStats.SuccessCount
+		status.SSHErrorCount = sshStats.ErrorCount
+		status.SSHLastError = sshStats.LastError
+		status.SSHLastErrorAt = sshStats.LastErrorAt
+	}
+}
+
+// isEdgeGateway checks if the server is the edge-gateway
+func (c *Checker) isEdgeGateway(serverID, serverName, ip string) bool {
+	// Check by name (common patterns)
+	nameLower := strings.ToLower(serverName)
+	idLower := strings.ToLower(serverID)
+	if strings.Contains(nameLower, "edge") || strings.Contains(nameLower, "gateway") ||
+		strings.Contains(idLower, "edge") || strings.Contains(idLower, "gateway") {
+		return true
+	}
+
+	// Check by IP - compare with edge host
+	edgeHost := c.config.Edge.Host
+	if idx := strings.Index(edgeHost, "@"); idx != -1 {
+		edgeHost = edgeHost[idx+1:]
+	}
+	return ip == edgeHost
 }
 
 // checkSwitchGateServer checks a remote VPS using switch-gate API via SSH
@@ -289,8 +343,17 @@ func (c *Checker) checkSwitchGateServer(status *ServerStatus, server *config.Ser
 		return
 	}
 
-	// Get status from switch-gate API
+	// Get status from switch-gate API (this updates SSH statistics)
 	sgStatus, err := sgClient.GetStatus()
+
+	// Get SSH statistics AFTER the call (so it includes this request)
+	sshStats := sgClient.GetSSHStats()
+	status.SSHLatency = sshStats.LastLatency
+	status.SSHSuccessCount = sshStats.SuccessCount
+	status.SSHErrorCount = sshStats.ErrorCount
+	status.SSHLastError = sshStats.LastError
+	status.SSHLastErrorAt = sshStats.LastErrorAt
+
 	if err != nil {
 		status.IsUp = false
 		// Add error as service status

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -23,6 +24,23 @@ type Client struct {
 	keyPath   string
 	apiPort   int
 	sshConfig *ssh.ClientConfig
+
+	// SSH statistics (in-memory, resets on restart)
+	sshSuccessCount int
+	sshErrorCount   int
+	sshLastLatency  time.Duration
+	sshLastError    string
+	sshLastErrorAt  time.Time
+	sshMu           sync.Mutex
+}
+
+// SSHStats holds SSH connection statistics
+type SSHStats struct {
+	SuccessCount int
+	ErrorCount   int
+	LastLatency  time.Duration
+	LastError    string
+	LastErrorAt  time.Time
 }
 
 // Status represents switch-gate status
@@ -95,6 +113,36 @@ func (c *Client) Name() string {
 	return c.name
 }
 
+// GetSSHStats returns SSH connection statistics
+func (c *Client) GetSSHStats() SSHStats {
+	c.sshMu.Lock()
+	defer c.sshMu.Unlock()
+
+	return SSHStats{
+		SuccessCount: c.sshSuccessCount,
+		ErrorCount:   c.sshErrorCount,
+		LastLatency:  c.sshLastLatency,
+		LastError:    c.sshLastError,
+		LastErrorAt:  c.sshLastErrorAt,
+	}
+}
+
+// recordSSHResult records the result of an SSH operation
+func (c *Client) recordSSHResult(err error, latency time.Duration) {
+	c.sshMu.Lock()
+	defer c.sshMu.Unlock()
+
+	c.sshLastLatency = latency
+
+	if err != nil {
+		c.sshErrorCount++
+		c.sshLastError = err.Error()
+		c.sshLastErrorAt = time.Now()
+	} else {
+		c.sshSuccessCount++
+	}
+}
+
 // buildSSHConfig creates SSH client configuration
 func (c *Client) buildSSHConfig() (*ssh.ClientConfig, error) {
 	var authMethods []ssh.AuthMethod
@@ -151,6 +199,19 @@ func (c *Client) getAgentAuth() ssh.AuthMethod {
 
 // exec runs command on VPS via SSH with ProxyJump
 func (c *Client) exec(cmd string) (string, error) {
+	start := time.Now()
+
+	result, err := c.execInternal(cmd)
+
+	// Record statistics
+	latency := time.Since(start)
+	c.recordSSHResult(err, latency)
+
+	return result, err
+}
+
+// execInternal performs the actual SSH command execution
+func (c *Client) execInternal(cmd string) (string, error) {
 	// Parse jump host
 	jumpUser := "master"
 	jumpAddr := c.jumpHost

@@ -3,11 +3,32 @@ package telegram
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/scinfra-pro/scinfra-bot/internal/health"
 )
+
+// formatTimeAgo returns a human-readable "time ago" string
+func formatTimeAgo(t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+
+	d := time.Since(t)
+
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
 
 // handleInfra handles the /infra command - infrastructure overview
 func (b *Bot) handleInfra(msg *tgbotapi.Message) {
@@ -153,6 +174,42 @@ func (b *Bot) buildServerDetailMessage(serverID, source string, force bool) (str
 			sb.WriteString(fmt.Sprintf(" (%s)", status.ExternalError))
 		}
 		sb.WriteString("\n")
+	}
+
+	// SSH statistics (for remote VPS and edge-gateway)
+	// Show section if this server uses SSH (has any stats OR latency recorded)
+	hasSSHStats := status.SSHSuccessCount > 0 || status.SSHErrorCount > 0 || status.SSHLatency > 0
+	// Also show for edge-gateway (name contains "edge" or "gateway")
+	isEdge := strings.Contains(strings.ToLower(status.Name), "edge") || strings.Contains(strings.ToLower(status.Name), "gateway")
+	if hasSSHStats || isEdge {
+		sb.WriteString("\n🔗 <b>SSH:</b>\n")
+
+		// Latency
+		if status.SSHLatency > 0 {
+			sb.WriteString(fmt.Sprintf("• Latency: %dms\n", status.SSHLatency.Milliseconds()))
+		} else {
+			sb.WriteString("• Latency: no stat\n")
+		}
+
+		// Success rate
+		total := status.SSHSuccessCount + status.SSHErrorCount
+		if total > 0 {
+			rate := float64(status.SSHSuccessCount) / float64(total) * 100
+			sb.WriteString(fmt.Sprintf("• Success: %d/%d (%.0f%%)\n", status.SSHSuccessCount, total, rate))
+		} else {
+			sb.WriteString("• Success: 0/0 (0%)\n")
+		}
+
+		// Last error
+		if status.SSHLastError != "" && !status.SSHLastErrorAt.IsZero() {
+			ago := formatTimeAgo(status.SSHLastErrorAt)
+			// Truncate long error messages
+			errMsg := status.SSHLastError
+			if len(errMsg) > 40 {
+				errMsg = errMsg[:40] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("• Last error: %s\n  <code>%s</code>\n", ago, errMsg))
+		}
 	}
 
 	// Services

@@ -60,6 +60,17 @@ func New(cfg *config.Config, edgeClient *edge.Client) (*Bot, error) {
 	var healthChecker *health.Checker
 	if cfg.IsInfrastructureEnabled() {
 		healthChecker = health.NewChecker(cfg, sgClients)
+		// Set edge SSH stats provider
+		healthChecker.SetEdgeSSHStatsFunc(func() health.EdgeSSHStats {
+			stats := edgeClient.GetSSHStats()
+			return health.EdgeSSHStats{
+				SuccessCount: stats.SuccessCount,
+				ErrorCount:   stats.ErrorCount,
+				LastLatency:  stats.LastLatency,
+				LastError:    stats.LastError,
+				LastErrorAt:  stats.LastErrorAt,
+			}
+		})
 		log.Printf("Infrastructure monitoring enabled with %d clouds", len(cfg.Infrastructure.Clouds))
 	}
 
