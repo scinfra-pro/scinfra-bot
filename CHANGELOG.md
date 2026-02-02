@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-02-02
+
+### Added
+
+- Auto-deploy to monitoring-server via GitHub Actions
+- Deploy job in release workflow (SSH via ProxyJump)
+
+### Changed
+
+- Added `.gitattributes` to enforce LF line endings
+
 ## [1.2.0] - 2026-02-02
 
 ### Added

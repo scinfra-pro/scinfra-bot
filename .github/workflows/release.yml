@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build and Release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
     
     steps:
       - name: Checkout code
@@ -88,3 +90,56 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy:
+    name: Deploy to monitoring-server
+    needs: build
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add hosts to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.JUMP_HOST_IP }} >> ~/.ssh/known_hosts
+          ssh -o StrictHostKeyChecking=accept-new \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.JUMP_HOST_IP }} \
+            "ssh-keyscan -H ${{ secrets.MONITORING_SERVER_IP }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy scinfra-bot
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          JUMP_HOST: ${{ secrets.JUMP_HOST_IP }}
+          TARGET: ${{ secrets.MONITORING_SERVER_IP }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -o ProxyJump=${USER}@${JUMP_HOST} ${USER}@${TARGET} << ENDSSH
+            set -e
+            cd /opt/scinfra-bot
+            
+            # Download new version
+            sudo wget -q "https://github.com/scinfra-pro/scinfra-bot/releases/download/${VERSION}/scinfra-bot-linux-amd64" \
+              -O scinfra-bot.new
+            sudo chmod +x scinfra-bot.new
+            
+            # Atomic replace + restart
+            sudo mv scinfra-bot.new scinfra-bot
+            sudo systemctl restart scinfra-bot
+            
+            echo "✅ scinfra-bot ${VERSION} deployed"
+          ENDSSH
+
+      - name: Verify deployment
+        env:
+          JUMP_HOST: ${{ secrets.JUMP_HOST_IP }}
+          TARGET: ${{ secrets.MONITORING_SERVER_IP }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          sleep 3
+          ssh -o ProxyJump=${USER}@${JUMP_HOST} ${USER}@${TARGET} \
+            'sudo systemctl is-active scinfra-bot && /opt/scinfra-bot/scinfra-bot -version'

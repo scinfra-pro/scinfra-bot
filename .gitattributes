@@ -1,0 +1,33 @@
+# Enforce LF line endings for all text files
+* text=auto eol=lf
+
+# Go files
+*.go text eol=lf
+
+# Config and data files
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Scripts
+*.sh text eol=lf
+Makefile text eol=lf
+
+# Git and CI
+.gitignore text eol=lf
+.gitattributes text eol=lf
+*.dockerfile text eol=lf
+Dockerfile text eol=lf
+
+# Binary files (no conversion)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.exe binary
