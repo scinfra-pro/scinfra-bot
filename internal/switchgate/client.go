@@ -338,7 +338,7 @@ func (c *Client) SetMode(mode string) error {
 // GetExternalIP returns current external IP through switch-gate
 func (c *Client) GetExternalIP() (string, error) {
 	// Use switch-gate SOCKS proxy to get external IP
-	cmd := "curl -s -x socks5h://127.0.0.1:18388 --max-time 10 ifconfig.me"
+	cmd := "curl -s -x socks5h://127.0.0.1:18388 --max-time 10 api.ipify.org"
 	output, err := c.exec(cmd)
 	if err != nil {
 		return "", err

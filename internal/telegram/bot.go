@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -13,6 +14,13 @@ import (
 	"github.com/scinfra-pro/scinfra-bot/internal/switchgate"
 )
 
+// ipCache holds cached external IP with timestamp
+type ipCache struct {
+	ip        string
+	timestamp time.Time
+	mu        sync.RWMutex
+}
+
 // Bot represents the Telegram bot
 type Bot struct {
 	api               *tgbotapi.BotAPI
@@ -24,6 +32,11 @@ type Bot struct {
 	// Cooldown tracking for callback spam protection
 	callbackCooldown map[int64]time.Time
 	cooldownMu       sync.Mutex
+
+	// IP caching for async updates
+	vpsIPCache  map[string]*ipCache // key = "upstream-mode" (e.g., "upstream1-warp")
+	edgeIPCache *ipCache            // edge-gateway IP cache
+	ipCacheTTL  time.Duration       // cache TTL (60 seconds)
 }
 
 // New creates a new Telegram bot
@@ -81,6 +94,9 @@ func New(cfg *config.Config, edgeClient *edge.Client) (*Bot, error) {
 		switchGateClients: sgClients,
 		healthChecker:     healthChecker,
 		callbackCooldown:  make(map[int64]time.Time),
+		vpsIPCache:        make(map[string]*ipCache),
+		edgeIPCache:       &ipCache{},
+		ipCacheTTL:        60 * time.Second,
 	}, nil
 }
 
@@ -199,4 +215,68 @@ func (b *Bot) checkCooldown(chatID int64) bool {
 
 	b.callbackCooldown[chatID] = time.Now()
 	return false
+}
+
+// makeCacheKey generates cache key including VPS mode if applicable
+// Pass vpsMode as empty string if not applicable (edge-gateway or no switch-gate)
+func (b *Bot) makeCacheKey(upstreamName, vpsMode string) string {
+	if upstreamName == "" {
+		return "" // edge-gateway (no mode)
+	}
+
+	if vpsMode == "" {
+		return upstreamName // no VPS mode (edge-only or no switch-gate)
+	}
+
+	// Return "upstream-mode" (e.g., "upstream1-warp")
+	return fmt.Sprintf("%s-%s", upstreamName, vpsMode)
+}
+
+// getIPFromCache returns cached IP if still valid, otherwise empty string
+func (b *Bot) getIPFromCache(upstreamName, vpsMode string) string {
+	cacheKey := b.makeCacheKey(upstreamName, vpsMode)
+	var cache *ipCache
+
+	if cacheKey == "" {
+		// Edge-gateway cache
+		cache = b.edgeIPCache
+	} else {
+		// VPS cache
+		var ok bool
+		cache, ok = b.vpsIPCache[cacheKey]
+		if !ok {
+			return ""
+		}
+	}
+
+	cache.mu.RLock()
+	defer cache.mu.RUnlock()
+
+	if time.Since(cache.timestamp) < b.ipCacheTTL {
+		return cache.ip
+	}
+	return ""
+}
+
+// setIPCache stores IP in cache with current timestamp
+func (b *Bot) setIPCache(upstreamName, vpsMode, ip string) {
+	cacheKey := b.makeCacheKey(upstreamName, vpsMode)
+	var cache *ipCache
+
+	if cacheKey == "" {
+		// Edge-gateway cache
+		cache = b.edgeIPCache
+	} else {
+		// VPS cache - create if doesn't exist
+		if _, ok := b.vpsIPCache[cacheKey]; !ok {
+			b.vpsIPCache[cacheKey] = &ipCache{}
+		}
+		cache = b.vpsIPCache[cacheKey]
+	}
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	cache.ip = ip
+	cache.timestamp = time.Now()
 }

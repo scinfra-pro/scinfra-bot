@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.2.0] - 2026-02-02
+
+### Added
+
+- Asynchronous external IP fetching with 60-second in-memory cache
+- VPS mode-aware IP caching (separate entries for direct/warp/home)
+- Pending state indicator (`⏳checking...`) during IP fetch
+- IPv4-only external IP detection via `api.ipify.org`
+
+### Changed
+
+- All mode switching operations now execute asynchronously
+- Refresh button forces cache bypass and shows spinner during operation
+- `/status` command uses cached IP when available
+
 ## [1.1.0] - 2026-02-01
 
 ### Added

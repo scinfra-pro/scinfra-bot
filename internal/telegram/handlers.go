@@ -151,22 +151,45 @@ func (b *Bot) handleHelp(msg *tgbotapi.Message) {
 // handleStatus sends full VPN status with inline keyboard
 func (b *Bot) handleStatus(msg *tgbotapi.Message) {
 	text, keyboard := b.buildStatusMessage()
-	b.replyWithKeyboard(msg.Chat.ID, text, keyboard)
+	sentMsg := tgbotapi.NewMessage(msg.Chat.ID, text)
+	sentMsg.ParseMode = "HTML"
+	sentMsg.ReplyMarkup = keyboard
+
+	sent, err := b.api.Send(sentMsg)
+	if err != nil {
+		log.Printf("Failed to send status message: %v", err)
+		return
+	}
+
+	// Get current upstream and VPS mode
+	status, err := b.edgeClient.GetStatus()
+	if err != nil {
+		return
+	}
+
+	vpsMode := ""
+	if sgClient := b.getSwitchGateClient(status.Server); sgClient != nil {
+		if vpsStatus, err := sgClient.GetStatus(); err == nil {
+			vpsMode = vpsStatus.Mode
+		}
+	}
+
+	// Launch async IP update if no cache
+	if b.getIPFromCache(status.Server, vpsMode) == "" {
+		go b.updateIPAndRefresh(msg.Chat.ID, sent.MessageID, status.Server, false)
+	}
 }
 
 // buildStatusMessage builds status text and keyboard
+// Uses cached IP if available, otherwise shows placeholder
 func (b *Bot) buildStatusMessage() (string, tgbotapi.InlineKeyboardMarkup) {
 	status, err := b.edgeClient.GetStatus()
 	if err != nil {
 		return fmt.Sprintf("❌ Error getting status: %v", err), tgbotapi.InlineKeyboardMarkup{}
 	}
 
-	ip, err := b.edgeClient.GetExternalIP()
-	if err != nil {
-		ip = "unknown"
-	}
-
-	// Get VPS mode if switch-gate is available
+	// Try to get IP from cache first
+	// Get VPS mode if switch-gate is available (need mode for cache key)
 	vpsMode := ""
 	vpsModeLine := ""
 	vpsError := ""
@@ -179,6 +202,12 @@ func (b *Bot) buildStatusMessage() (string, tgbotapi.InlineKeyboardMarkup) {
 			vpsModeLine = "\n└ VPS Mode: ❌ error"
 			vpsError = fmt.Sprintf("\n\n⚠️ <b>VPS Error:</b> <code>%v</code>", err)
 		}
+	}
+
+	ip := b.getIPFromCache(status.Server, vpsMode)
+	if ip == "" {
+		// No cache - use placeholder
+		ip = "⏳checking..."
 	}
 
 	modeIcon := b.getModeIcon(status.Mode)
@@ -202,16 +231,11 @@ func (b *Bot) buildStatusMessage() (string, tgbotapi.InlineKeyboardMarkup) {
 }
 
 // buildStatusMessageAfterSetMode builds status after successful SetMode
-// If GetStatus fails, shows the mode we just set with a warning
+// Shows placeholder for IP since it will be updated asynchronously
 func (b *Bot) buildStatusMessageAfterSetMode(setMode string) (string, tgbotapi.InlineKeyboardMarkup) {
 	status, err := b.edgeClient.GetStatus()
 	if err != nil {
 		return fmt.Sprintf("❌ Error getting status: %v", err), tgbotapi.InlineKeyboardMarkup{}
-	}
-
-	ip, err := b.edgeClient.GetExternalIP()
-	if err != nil {
-		ip = "unknown"
 	}
 
 	// Try to get VPS status
@@ -228,6 +252,13 @@ func (b *Bot) buildStatusMessageAfterSetMode(setMode string) (string, tgbotapi.I
 			// GetStatus failed - use mode we just set, show warning
 			vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s ⚠️ (status unavailable)", b.getVPSModeIcon(setMode), setMode)
 		}
+	}
+
+	// Try to get IP from cache first (using the mode we just set)
+	ip := b.getIPFromCache(status.Server, vpsMode)
+	if ip == "" {
+		// No cache - show placeholder
+		ip = "⏳checking..."
 	}
 
 	modeIcon := b.getModeIcon(status.Mode)
@@ -252,66 +283,6 @@ func (b *Bot) buildStatusMessageAfterSetMode(setMode string) (string, tgbotapi.I
 
 // buildStatusMessageWithCheck builds status with mode health check
 // This takes longer (~8-10 sec) but detects if current mode is not working
-func (b *Bot) buildStatusMessageWithCheck() (string, tgbotapi.InlineKeyboardMarkup) {
-	status, err := b.edgeClient.GetStatus()
-	if err != nil {
-		return fmt.Sprintf("❌ Error getting status: %v", err), tgbotapi.InlineKeyboardMarkup{}
-	}
-
-	ip, err := b.edgeClient.GetExternalIP()
-	if err != nil {
-		ip = "unknown"
-	}
-
-	// Get VPS status with health check
-	vpsMode := ""
-	vpsHealthy := true
-	vpsModeLine := ""
-	vpsError := ""
-	if sgClient := b.getSwitchGateClient(status.Server); sgClient != nil {
-		// Use GetStatusWithCheck for health verification
-		if vpsStatus, err := sgClient.GetStatusWithCheck(); err == nil {
-			vpsMode = vpsStatus.Mode // Always use real mode from API
-
-			// Check if mode is healthy
-			if vpsStatus.ModeHealthy != nil && !*vpsStatus.ModeHealthy {
-				vpsHealthy = false
-				errorInfo := ""
-				if vpsStatus.ModeError != nil {
-					errorInfo = fmt.Sprintf(" (%s)", *vpsStatus.ModeError)
-				}
-				vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s ⚠️%s", b.getVPSModeIcon(vpsStatus.Mode), vpsStatus.Mode, errorInfo)
-			} else {
-				vpsModeLine = fmt.Sprintf("\n└ VPS Mode: %s %s ✓", b.getVPSModeIcon(vpsStatus.Mode), vpsStatus.Mode)
-			}
-		} else {
-			// Show error instead of silently ignoring
-			vpsModeLine = "\n└ VPS Mode: ❌ error"
-			vpsError = fmt.Sprintf("\n\n⚠️ <b>VPS Error:</b> <code>%v</code>", err)
-		}
-	}
-
-	modeIcon := b.getModeIcon(status.Mode)
-
-	text := fmt.Sprintf(`ℹ️ <b>VPN Status</b> (checked)
-
-<b>Edge-gateway:</b>
-├ Mode: %s %s
-├ Upstream: %s%s
-
-<b>Current IP:</b> <code>%s</code>%s`,
-		modeIcon, status.Mode,
-		status.Server,
-		vpsModeLine,
-		ip,
-		vpsError,
-	)
-
-	// Checkmark on real mode, warning indicator if unhealthy
-	keyboard := b.buildStatusKeyboardWithHealth(status.Mode, status.Server, vpsMode, vpsHealthy)
-	return text, keyboard
-}
-
 // handleEdge handles edge-gateway commands
 func (b *Bot) handleEdge(msg *tgbotapi.Message, args string) {
 	args = strings.TrimSpace(args)
@@ -652,10 +623,31 @@ func (b *Bot) handleEdgeCallback(callback *tgbotapi.CallbackQuery, mode string) 
 		return
 	}
 
+	// Get current upstream and VPS mode
+	status, _ := b.edgeClient.GetStatus()
+	upstreamName := ""
+	vpsMode := ""
+	if status != nil {
+		upstreamName = status.Server
+		if sgClient := b.getSwitchGateClient(upstreamName); sgClient != nil {
+			if vpsStatus, err := sgClient.GetStatus(); err == nil {
+				vpsMode = vpsStatus.Mode
+			}
+		}
+	}
+
 	// Update message with new status
 	text, keyboard := b.buildStatusMessage()
 	b.editMessageWithKeyboard(callback.Message.Chat.ID, callback.Message.MessageID, text, keyboard)
 	b.answerCallback(callback.ID, fmt.Sprintf("✅ Edge → %s", mode))
+
+	// Asynchronously update IP only if cache is empty
+	if upstreamName != "" {
+		cachedIP := b.getIPFromCache(upstreamName, vpsMode)
+		if cachedIP == "" {
+			go b.updateStatusWithIP(callback.Message.Chat.ID, callback.Message.MessageID, false)
+		}
+	}
 }
 
 // handleUpstreamCallback handles upstream selection button press
@@ -665,10 +657,24 @@ func (b *Bot) handleUpstreamCallback(callback *tgbotapi.CallbackQuery, upstream 
 		return
 	}
 
+	// Get VPS mode for new upstream (for cache key)
+	vpsMode := ""
+	if sgClient := b.getSwitchGateClient(upstream); sgClient != nil {
+		if vpsStatus, err := sgClient.GetStatus(); err == nil {
+			vpsMode = vpsStatus.Mode
+		}
+	}
+
 	// Update message with new status
 	text, keyboard := b.buildStatusMessage()
 	b.editMessageWithKeyboard(callback.Message.Chat.ID, callback.Message.MessageID, text, keyboard)
 	b.answerCallback(callback.ID, fmt.Sprintf("✅ Upstream → %s", upstream))
+
+	// Asynchronously update IP only if cache is empty
+	cachedIP := b.getIPFromCache(upstream, vpsMode)
+	if cachedIP == "" {
+		go b.updateStatusWithIP(callback.Message.Chat.ID, callback.Message.MessageID, false)
+	}
 }
 
 // handleVPSCallback handles VPS mode button press
@@ -692,20 +698,23 @@ func (b *Bot) handleVPSCallback(callback *tgbotapi.CallbackQuery, mode string) {
 	}
 
 	// SetMode succeeded - update message with new status
-	// Use buildStatusMessageAfterSetMode to handle case when GetStatus fails
 	text, keyboard := b.buildStatusMessageAfterSetMode(mode)
 	b.editMessageWithKeyboard(callback.Message.Chat.ID, callback.Message.MessageID, text, keyboard)
 	b.answerCallback(callback.ID, fmt.Sprintf("✅ VPS → %s", mode))
+
+	// Asynchronously update IP only if cache is empty for new mode
+	cachedIP := b.getIPFromCache(edgeStatus.Server, mode)
+	if cachedIP == "" {
+		go b.updateStatusWithIP(callback.Message.Chat.ID, callback.Message.MessageID, false)
+	}
 }
 
 // handleActionCallback handles action button press (refresh, traffic)
 func (b *Bot) handleActionCallback(callback *tgbotapi.CallbackQuery, action string) {
 	switch action {
 	case "refresh":
-		// Use health check version for Refresh button
-		text, keyboard := b.buildStatusMessageWithCheck()
-		b.editMessageWithKeyboard(callback.Message.Chat.ID, callback.Message.MessageID, text, keyboard)
-		b.answerCallback(callback.ID, "🔄 Checked")
+		// Use async refresh - don't answer callback yet (spinner will run)
+		go b.handleRefreshAsync(callback.Message.Chat.ID, callback.Message.MessageID, callback.ID)
 	case "traffic":
 		text, keyboard := b.buildTrafficMessage()
 		b.editMessageWithKeyboard(callback.Message.Chat.ID, callback.Message.MessageID, text, keyboard)

@@ -260,7 +260,7 @@ func (c *Client) SetUpstream(name string) error {
 
 // GetExternalIP returns current external IP
 func (c *Client) GetExternalIP() (string, error) {
-	output, err := c.exec("curl -s --max-time 5 ifconfig.me")
+	output, err := c.exec("curl -s --max-time 5 api.ipify.org")
 	if err != nil {
 		return "", err
 	}
